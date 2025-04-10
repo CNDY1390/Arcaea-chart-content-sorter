@@ -319,14 +319,19 @@ class Arc:
         return self.TiminggroupProperties._TiminggroupProperties__Chart.TimingPointDensityFactor
 
 class Tap:
-    def __init__(self, Time: int, Lane: int, Timinggroup: TiminggroupProperties) -> None:
+    def __init__(self, Time: int, Lane: float, Timinggroup: TiminggroupProperties) -> None:
         self.StartTime = Time
         self.Lane = Lane
         self.TiminggroupId = Timinggroup.TiminggroupId
         self.TiminggroupProperties = Timinggroup
 
     def __str__(self) -> str:
-        return '(' + str(self.StartTime) + ',' + str(self.Lane) + ')' + ';'
+        # Format lane as int if it's a whole number, otherwise as float
+        if isinstance(self.Lane, float) and self.Lane.is_integer():
+            lane_str = str(int(self.Lane))
+        else:
+            lane_str = str(self.Lane)
+        return '(' + str(self.StartTime) + ',' + lane_str + ')' + ';'
 
     @property
     def NoInput(self) -> bool:
@@ -685,7 +690,7 @@ class Aff:
             s = StringParser(line)
             s.Skip(1)
             Time = s.ReadInt(",")
-            Lane = s.ReadInt(")")
+            Lane = s.ReadFloat(")")
             return Tap(Time, Lane, Timinggroup)
 
         def ParseHold(line: str, Timinggroup: TiminggroupProperties):
@@ -975,10 +980,73 @@ class Aff:
             if isinstance(i, Hold) or isinstance(i, Arc):
                 i.Update()
         def _(x):
-            if isinstance(x, TiminggroupProperties):
-                return 9999999999999
-            return x.StartTime
-        self.Events.sort(key = _)
+            # Internal sort for Refresh: primarily by StartTime.
+            # Objects without StartTime (like TiminggroupProperties) are placed at the beginning.
+            return getattr(x, 'StartTime', -1) # Use -1 to sort them before time 0 events
+
+        self.Events.sort(key = _) # Use the simple, consistent key for internal refresh
+
+    def sort_events_for_comparison(self):
+        """Sorts events primarily by StartTime, secondarily by a predefined event type order, respecting timing groups."""
+        # Define a sort order for event types (lower number = earlier in sort)
+        event_sort_order = {
+            Timing: 0,
+            Tap: 1,
+            Hold: 2,
+            Arc: 3,
+            Flick: 4,
+            Camera: 5,
+            SceneControl: 6
+            # TiminggroupProperties are handled separately or implicitly by grouping
+        }
+
+        grouped_events = {}
+        timing_groups_props = {}
+
+        # Separate events by timing group ID and store TiminggroupProperties
+        for event in self.Events:
+            if isinstance(event, TiminggroupProperties):
+                timing_groups_props[event.TiminggroupId] = event
+                if event.TiminggroupId not in grouped_events:
+                    grouped_events[event.TiminggroupId] = []
+            else:
+                group_id = getattr(event, 'TiminggroupId', 0) # Default to group 0 if not specified
+                if group_id not in grouped_events:
+                    grouped_events[group_id] = []
+                grouped_events[group_id].append(event)
+
+        # Sort events within each group
+        sorted_full_list = []
+        # Ensure group 0 (main group) is processed first if it exists
+        group_ids_sorted = sorted(grouped_events.keys())
+
+        # Add TiminggroupProperties for group 0 if it exists (it always should implicitly)
+        if 0 in timing_groups_props:
+             # We don't add the group 0 definition itself to the output list usually
+             pass
+
+        if 0 in grouped_events:
+            key_func = lambda e: (e.StartTime, event_sort_order.get(type(e), 999))
+            grouped_events[0].sort(key=key_func)
+            sorted_full_list.extend(grouped_events[0])
+
+        # Process other timing groups
+        for group_id in group_ids_sorted:
+            if group_id == 0: continue # Already processed
+
+            # Add the TiminggroupProperties definition for this group
+            if group_id in timing_groups_props:
+                 sorted_full_list.append(timing_groups_props[group_id]) # Add the definition itself
+
+            # Sort and add events for this group
+            key_func = lambda e: (e.StartTime, event_sort_order.get(type(e), 999))
+            grouped_events[group_id].sort(key=key_func)
+            sorted_full_list.extend(grouped_events[group_id])
+
+        self.Events = sorted_full_list # Update the internal event list to the sorted one
+        # Note: The original Refresh sort might be redundant now, or could be simplified.
+        # Let's keep the original Refresh sort for now as it handles the ArcRelationship calculation dependency.
+        # The main change will be in the Chart() method using the logic from sort_events_for_comparison.
 
     def SetTimingPointDensityFactor(self, TimingPointDensityFactor: float):
         self.TimingPointDensityFactor = TimingPointDensityFactor
@@ -998,21 +1066,63 @@ class Aff:
         if self.TimingPointDensityFactor != 1.0:
             ChartString += ('TimingPointDensityFactor:' + str(self.TimingPointDensityFactor) + '\n')
         ChartString += '-\n'
-        MaxTiminggroupId = 0
-        for i in self.Events:
-            if i.TiminggroupId > MaxTiminggroupId:
-                MaxTiminggroupId = i.TiminggroupId
-        for i in self.Events:
-            if isinstance(i, TiminggroupProperties) and i.TiminggroupId == 0: pass
-            elif i.TiminggroupId == 0:
-                ChartString += (i.__str__() + '\n')
-        for i in self.Events:
-            if isinstance(i, TiminggroupProperties) and i.TiminggroupId != 0:
-                ChartString += (i.__str__() + '{\n')
-                for n in self.Events:
-                    if n.TiminggroupId == i.TiminggroupId and not isinstance(n, TiminggroupProperties):
-                        ChartString += ('  ' + n.__str__() + '\n')
+
+        # Use the sorting logic for output generation
+        # Define a sort order for event types (lower number = earlier in sort)
+        event_sort_order = {
+            Timing: 0,
+            Tap: 1,
+            Hold: 2,
+            Arc: 3,
+            Flick: 4,
+            Camera: 5,
+            SceneControl: 6
+        }
+        key_func = lambda e: (e.StartTime, event_sort_order.get(type(e), 999))
+
+        grouped_events = {}
+        timing_groups_props = {}
+        # Separate events by timing group ID and store TiminggroupProperties
+        for event in self.Events:
+            if isinstance(event, TiminggroupProperties):
+                timing_groups_props[event.TiminggroupId] = event
+                if event.TiminggroupId not in grouped_events:
+                    grouped_events[event.TiminggroupId] = []
+            else:
+                # Handle potential AttributeError if an event doesn't have TiminggroupId (shouldn't happen with current classes)
+                group_id = getattr(event, 'TiminggroupId', 0)
+                if group_id not in grouped_events:
+                    grouped_events[group_id] = []
+                grouped_events[group_id].append(event)
+
+        # Output events from the main group (group 0) sorted
+        if 0 in grouped_events:
+            grouped_events[0].sort(key=key_func)
+            for event in grouped_events[0]:
+                 ChartString += (event.__str__() + '\n')
+
+        # Output events from other timing groups, sorted within each group
+        group_ids_sorted = sorted(grouped_events.keys())
+        for group_id in group_ids_sorted:
+            if group_id == 0: continue # Skip main group, already processed
+
+            if group_id in timing_groups_props:
+                ChartString += (timing_groups_props[group_id].__str__() + '{\n')
+                if group_id in grouped_events:
+                     grouped_events[group_id].sort(key=key_func)
+                     for event in grouped_events[group_id]:
+                         ChartString += ('  ' + event.__str__() + '\n')
                 ChartString += '};\n'
+            # Handle case where a timing group might exist in events but not have a properties object (error case?)
+            elif group_id in grouped_events:
+                 # This case might indicate an issue, but we can still try to print the events
+                 # Maybe add a comment indicating the missing group definition?
+                 ChartString += f"# Warning: Events found for Timing Group {group_id} but no definition line was present.\n"
+                 grouped_events[group_id].sort(key=key_func)
+                 for event in grouped_events[group_id]:
+                      ChartString += ('  ' + event.__str__() + '\n')
+
+
         return ChartString
 
     def Save(self, FilePath) -> None:
