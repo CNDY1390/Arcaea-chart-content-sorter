@@ -32,3 +32,20 @@ python sort_chart.py 2.aff
 ````
 
 此命令将加载 `2.aff`，对其内容进行排序，并将结果保存到 `2_sorted.aff`。
+
+## 支持
+
+喜欢的话请给一个 star！您的支持是我持续开发的最大动力！
+
+如果有问题，请提交 issue！
+
+如果有好的修改方案，请提交 Pull Request！
+
+<div style="text-align: center;">
+    <img src="../docs/appreciation.png" style="height:150px;">
+</div>
+
+<center>感谢支持！❤</center>
+<br>
+
+> 如果可以，请在“赞助备注”中留下个人主页，谢谢支持！

@@ -36,3 +36,20 @@ python sort_chart.py 2.aff
 ```
 
 This command will load `2.aff`, sort its contents, and save the result to `2_sorted.aff`.
+
+## Support
+
+If you like this project, please give it a star! Your support is the greatest motivation for me to continue developing!
+
+If you have any issues, please submit an issue!
+
+If you have any good modification suggestions, please submit a Pull Request!
+
+<div style="text-align: center;">
+    <img src="./docs/appreciation.png" style="height:150px;">
+</div>
+
+<center>Thank you for your support! ❤</center>
+<br>
+
+> If possible, please leave your personal homepage in the "sponsor notes". Thank you for your support!
